@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import socket
+import time
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
@@ -135,25 +136,25 @@ class ToSeeDoorbellConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     
     async def _async_discover_devices(self) -> list:
         """Zjistí ToSee zařízení v LAN."""
+        return await self.hass.async_add_executor_job(self._discover_devices_sync)
+
+    def _discover_devices_sync(self) -> list:
+        """Blokující discovery voláno přes executor."""
+        import socket
         devices = []
-        
-        # Vytvoř socket pro discovery
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(3)
         sock.bind(('0.0.0.0', 0))
-        
+
         try:
-            # Pošli F1 30 discovery
             sock.sendto(DISCOVERY_PAYLOAD, (PPPP_BROADCAST_ADDR, PPPP_DISCOVERY_PORT))
-            
-            start = asyncio.get_event_loop().time()
-            while asyncio.get_event_loop().time() - start < 3:
+            start = time.time()
+            while time.time() - start < 3:
                 try:
                     data, addr = sock.recvfrom(1024)
                     if data[:2] == b'\xF1\x41' and len(data) >= 24:
                         did = data[4:24].decode('ascii', errors='ignore').strip('\x00')
-                        # Filtruj jen ToSee DID prefixy (začínají typicky na 201, 202, atd.)
                         if did and (did.startswith(('20', '21', '22', '23')) or len(did) == 20):
                             devices.append({
                                 "did": did,
@@ -167,7 +168,7 @@ class ToSeeDoorbellConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     continue
         finally:
             sock.close()
-        
+
         return devices
     
     @staticmethod

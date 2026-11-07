@@ -10,9 +10,6 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
     MediaType,
 )
-from homeassistant.components.media_player.const import (
-    MediaPlayerEntityFeature as MPEF,
-)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -59,10 +56,10 @@ class ToSeeIntercomMediaPlayer(MediaPlayerEntity):
     _attr_has_entity_name = True
     _attr_name = "Intercom"
     _attr_supported_features = (
-        MPEF.PLAY_MEDIA |
-        MPEF.STOP |
-        MPEF.VOLUME_SET |
-        MPEF.VOLUME_MUTE
+        MediaPlayerEntityFeature.PLAY_MEDIA |
+        MediaPlayerEntityFeature.STOP |
+        MediaPlayerEntityFeature.VOLUME_SET |
+        MediaPlayerEntityFeature.VOLUME_MUTE
     )
     _attr_media_content_type = MediaType.AUDIO
     

@@ -9,9 +9,10 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers import event as hass_helpers
 
 from .const import DOMAIN
 from .tosee_api import ToSeeDoorbellAPI
@@ -79,18 +80,25 @@ async def async_setup_entry(
     async_add_entities(entities)
     
     # Registruj callbacky pro real-time eventy
-    _register_event_callbacks(api, entities)
+    _register_event_callbacks(hass, api, entities)
 
 
-def _register_event_callbacks(api: ToSeeDoorbellAPI, entities: list) -> None:
-    """Registruje callbacky pro asynchronní události z PPPP."""
-    
+def _register_event_callbacks(hass: HomeAssistant, api: ToSeeDoorbellAPI, entities: list) -> None:
+    """Registruje callbacky pro asynchroní události z PPPP."""
+
     def find_entity(key: str) -> Optional[ToSeeBinarySensor]:
         for e in entities:
             if e._state_key == key:
                 return e
         return None
-    
+
+    def _make_off_callback(entity: ToSeeBinarySensor):
+        """Vytvoří callback pro vypnutí binary sensoru po časovém limitu."""
+        def _turn_off(_now):
+            entity._attr_is_on = False
+            entity.async_write_ha_state()
+        return _turn_off
+
     async def on_doorbell_press(data: Any) -> None:
         entity = find_entity("doorbell")
         if entity:
@@ -99,10 +107,10 @@ def _register_event_callbacks(api: ToSeeDoorbellAPI, entities: list) -> None:
                 "last_press": datetime.now().isoformat(),
                 "data": data,
             }
-            entity.async_write_ha_state_state()
+            entity.async_write_ha_state()
             # Auto-off po 3 sekundách
-            await hass_helpers.async_call_later(3, lambda _: setattr(entity, '_attr_is_on', False))
-    
+            hass_helpers.async_call_later(hass, 3, _make_off_callback(entity))
+
     async def on_motion_detected(data: Any) -> None:
         entity = find_entity("motion")
         if entity:
@@ -113,15 +121,15 @@ def _register_event_callbacks(api: ToSeeDoorbellAPI, entities: list) -> None:
             }
             entity.async_write_ha_state()
             # Auto-off po 30 sekundách
-            await hass_helpers.async_call_later(30, lambda _: setattr(entity, '_attr_is_on', False))
-    
+            hass_helpers.async_call_later(hass, 30, _make_off_callback(entity))
+
     async def on_pir_triggered(data: Any) -> None:
         entity = find_entity("pir")
         if entity:
             entity._attr_is_on = True
             entity.async_write_ha_state()
-            await hass_helpers.async_call_later(10, lambda _: setattr(entity, '_attr_is_on', False))
-    
+            hass_helpers.async_call_later(hass, 10, _make_off_callback(entity))
+
     # Registrace do API (pokud API podporuje event callbacky)
     api.register_callback("doorbell_press", on_doorbell_press)
     api.register_callback("motion_detected", on_motion_detected)

@@ -170,18 +170,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_reconnect_loop(hass: HomeAssistant, entry: ConfigEntry, api: ToSeeDoorbellAPI, coordinator: "ToSeeDataUpdateCoordinator") -> None:
-    """Pokusí se znovu připojit na pozadí."""
-    while True:
+    """Pokusí se znovu připojit na pozadí (max 10 pokusů)."""
+    for attempt in range(10):
         await asyncio.sleep(30)
         if not api.is_connected:
             try:
-                _LOGGER.info("Attempting reconnect to %s", api.host)
+                _LOGGER.info("Reconnect attempt %d/10 to %s", attempt + 1, api.host)
                 await api.connect()
                 await coordinator.async_request_refresh()
                 _LOGGER.info("Reconnected successfully")
-                break
+                return
             except Exception as e:
                 _LOGGER.debug("Reconnect failed: %s", e)
+    _LOGGER.warning("Reconnect failed after 10 attempts for %s", api.host)
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:

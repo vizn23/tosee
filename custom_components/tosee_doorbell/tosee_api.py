@@ -56,7 +56,11 @@ class ToSeeDoorbellAPI:
             await self._session.connect()
             self._connected = True
             self._state["online"] = True
-            
+
+            # Registruj event callbacky z PPPP session do HA callback systému
+            for event in ("doorbell_press", "motion_detected", "pir_triggered", "video_start", "video_stop", "talk_start", "talk_stop"):
+                self._session.register_event_callback(event, self._fire_callbacks)
+
             # Načti počáteční konfiguraci
             await self._refresh_config()
             
@@ -89,6 +93,8 @@ class ToSeeDoorbellAPI:
             self._reconnect_task.cancel()
         
         if self._session:
+            for event in ("doorbell_press", "motion_detected", "pir_triggered", "video_start", "video_stop", "talk_start", "talk_stop"):
+                self._session.unregister_event_callback(event, self._fire_callbacks)
             await self._session.disconnect()
             self._session = None
         

@@ -169,7 +169,8 @@ class PPPPSession:
         self._xor_state: int = 0
         self._authenticated = False
         self._callbacks: Dict[str, asyncio.Future] = {}
-        
+        self._event_callbacks: Dict[str, List[Callable]] = {}
+
         # Video callback
         self._video_callback: Optional[Callable[[bytes], Awaitable[None]]] = None
         self._audio_callback: Optional[Callable[[bytes], Awaitable[None]]] = None
@@ -183,7 +184,7 @@ class PPPPSession:
         """Naváže PPPP spojení: discovery → handshake → auth."""
         try:
             # 1. Vytvoř UDP socket
-            self._transport, self._protocol = await asyncio.get_event_loop().create_datagram_endpoint(
+            self._transport, self._protocol = await asyncio.get_running_loop().create_datagram_endpoint(
                 lambda: PPPPProtocol(self._handle_raw_packet),
                 local_addr=('0.0.0.0', 0),
                 allow_broadcast=True,
@@ -339,14 +340,11 @@ class PPPPSession:
         _LOGGER.info("Authentication successful, session key: %s", self._session_key.hex())
     
     def _build_av_frame(self, stream_type: int, io_type: int, payload: bytes) -> bytes:
-        """Sestaví AV rámec: [payload_len+16][stream_type(3B)][io_type(2B)][payload_len(2B)][12B reserved][payload]"""
+        """Sestaví AV rámec: [total_len(4B)][stream_type(3B)][io_type(2B)][payload_len(2B)][12B reserved][payload]"""
         payload_len = len(payload)
         total_len = payload_len + 16
-        # 3 byte stream type (LE), 2 byte io_type (LE), 2 byte payload_len (LE), 12 byte reserved
-        header = struct.pack("<IHHI", (stream_type & 0xFFFFFF) | ((io_type & 0xFFFF) << 24) | ((payload_len & 0xFFFF) << 16), 0, 0, 0)
-        # Opravím formát podle逆向工程
         frame = bytearray()
-        frame += struct.pack("<I", total_len)  # 4B total length
+        frame += struct.pack("<I", total_len)
         frame += bytes([stream_type & 0xFF, (stream_type >> 8) & 0xFF, (stream_type >> 16) & 0xFF])
         frame += struct.pack("<H", io_type)
         frame += struct.pack("<H", payload_len)
@@ -430,7 +428,7 @@ class PPPPSession:
             payload=encrypted
         )
         
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._callbacks[payload["seq"]] = future
         
         await self.ioctrl.send(av_frame)
@@ -516,7 +514,7 @@ class PPPPSession:
         if magic != DRW_MAGIC:
             # Možná P2P handshake packet (F1 41, F1 42)
             if data[:2] in (b'\xF1\x41', b'\xF1\x42', b'\xF1\x30', b'\xF1\x31'):
-                asyncio.create_task(self._recv_queue.put((0, 0, data)))
+                self._recv_queue.put_nowait((0, 0, data))
             return
         
         payload_len = struct.unpack(">I", data[2:6])[0] - 16
@@ -583,10 +581,32 @@ class PPPPSession:
         except json.JSONDecodeError:
             _LOGGER.debug("Non-JSON IOCTRL payload: %s", decrypted[:100].hex())
     
+    def register_event_callback(self, event: str, callback: Callable) -> None:
+        """Registruje callback pro asynchroní událost ze zařízení."""
+        if event not in self._event_callbacks:
+            self._event_callbacks[event] = []
+        self._event_callbacks[event].append(callback)
+
+    def unregister_event_callback(self, event: str, callback: Callable) -> None:
+        """Odregistruje callback pro událost."""
+        if event in self._event_callbacks:
+            self._event_callbacks[event].remove(callback)
+
+    def _fire_event_callbacks(self, event: str, data: Any) -> None:
+        """Vyvolá zaregistrované event callbacky."""
+        for callback in self._event_callbacks.get(event, []):
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(data))
+                else:
+                    callback(data)
+            except Exception as e:
+                _LOGGER.error("Event callback error for %s: %s", event, e)
+
     async def _handle_event(self, event_type: str, data: Any) -> None:
-        """Zpracuje asynchronní události."""
+        """Zpracuje asynchroní události ze zařízení."""
         _LOGGER.debug("Event: %s, data: %s", event_type, data)
-        # Zde by se volaly HA event bus callbacks
+        self._fire_event_callbacks(event_type, data)
     
     async def _heartbeat_loop(self) -> None:
         """Periodické heartbeaty pro udržení spojení."""

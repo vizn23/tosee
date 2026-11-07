@@ -2,12 +2,20 @@
 import asyncio
 import sys
 import os
+import importlib
 
-# Přidej komponentu do path
-sys.path.insert(0, os.path.dirname(__file__))
+# Přidej projektový kořen do path pro import custom_components
+_project_root = os.path.dirname(os.path.abspath(__file__))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
-from custom_components.tosee_doorbell.pppp_protocol import PPPPSession, ConnectionError, AuthenticationError
-from custom_components.tosee_doorbell.tosee_api import ToSeeDoorbellAPI
+_pppp = importlib.import_module("custom_components.tosee_doorbell.pppp_protocol")
+PPPPSession = _pppp.PPPPSession
+ConnectionError = _pppp.ConnectionError
+AuthenticationError = _pppp.AuthenticationError
+
+_tosee_api = importlib.import_module("custom_components.tosee_doorbell.tosee_api")
+ToSeeDoorbellAPI = _tosee_api.ToSeeDoorbellAPI
 
 async def test_discovery():
     """Test discovery v LAN."""
