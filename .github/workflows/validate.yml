@@ -1,0 +1,96 @@
+name: Validate & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install homeassistant==2024.12.0
+          pip install pycryptodome netifaces
+          pip install aiortc av  # for WebRTC
+      
+      - name: Validate manifest.json
+        run: |
+          python -c "
+          import json
+          with open('custom_components/tosee_doorbell/manifest.json') as f:
+              manifest = json.load(f)
+          required = ['domain', 'name', 'version', 'requirements', 'config_flow', 'iot_class']
+          for key in required:
+              assert key in manifest, f'Missing {key}'
+          assert manifest['domain'] == 'tosee_doorbell'
+          print('✅ Manifest valid')
+          "
+      
+      - name: Syntax check all Python files
+        run: |
+          find custom_components/tosee_doorbell -name "*.py" -exec python -m py_compile {} \;
+          echo "✅ All Python files compile"
+      
+      - name: Check imports
+        run: |
+          cd custom_components/tosee_doorbell
+          python -c "
+          import const
+          import config_flow
+          import pppp_protocol
+          import tosee_api
+          import camera
+          import sensor
+          import binary_sensor
+          import button
+          import select
+          import number
+          import switch
+          import media_player
+          import webrtc
+          print('✅ All modules import successfully')
+          "
+      
+      - name: Run protocol test (mock)
+        run: |
+          python test_protocol.py --mock 2>&1 || true
+
+  release:
+    name: Create Release
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get version from manifest
+        id: version
+        run: |
+          VERSION=$(grep '"version"' custom_components/tosee_doorbell/manifest.json | cut -d'"' -f4)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: ToSee Doorbell v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

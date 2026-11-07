@@ -1,0 +1,11 @@
+{
+  "domain": "tosee_doorbell",
+  "name": "ToSee Doorbell (PPPP Local)",
+  "version": "1.0.0",
+  "documentation": "https://github.com/your-repo/tosee-doorbell-ha",
+  "requirements": ["pycryptodome>=3.19.0", "netifaces>=0.11.0"],
+  "dependencies": [],
+  "codeowners": ["@your-github"],
+  "config_flow": true,
+  "iot_class": "local_polling"
+}
