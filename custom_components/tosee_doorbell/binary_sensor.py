@@ -171,9 +171,9 @@ class ToSeeBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if self._state_key == "online":
             return self._api.is_connected
         elif self._state_key == "motion":
-            return state.get("motion_detected", False)
+            return bool(state.get("last_motion"))
         elif self._state_key == "doorbell":
-            return state.get("doorbell_pressed", False)
+            return bool(state.get("last_doorbell"))
         elif self._state_key == "pir":
             config = state.get("config", {})
             return bool(config.get("pir_on", 0))
